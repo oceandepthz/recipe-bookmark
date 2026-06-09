@@ -79,4 +79,5 @@ docker compose exec app php artisan app:create-user
 - 本ツールは1人利用のローカル開発用です。php-fpm プールはバインドマウントへ
   書き込めるよう `storage/`・`bootstrap/cache/`・SQLite の権限を起動時に緩めています
   （`docker/php/entrypoint.sh`）。
-- 保存した本文HTMLは readability で script 等を除去したうえで表示します。
+- 保存した本文HTMLは外部サイト由来の信頼できない入力のため、HTMLPurifier
+  （`mews/purifier`）で許可リスト方式にサニタイズしてから保存・表示します（XSS対策）。

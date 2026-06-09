@@ -36,7 +36,8 @@
 
     @if ($recipe->content_html)
         <div class="recipe-content">
-            {!! $recipe->content_html !!}
+            {{-- 保存時にもサニタイズ済みだが、表示時にも HTMLPurifier を通して多層防御する --}}
+            {!! clean($recipe->content_html) !!}
         </div>
     @else
         <p class="meta">本文が取得できませんでした。<a href="{{ route('recipes.edit', $recipe) }}">編集画面</a>で本文を貼り付けるか、再取得できます。</p>
