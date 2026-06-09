@@ -6,6 +6,7 @@ use App\Http\Requests\StoreRecipeRequest;
 use App\Http\Requests\UpdateRecipeRequest;
 use App\Models\Recipe;
 use App\Models\Tag;
+use App\Services\Extraction\IngredientTagFilter;
 use App\Services\RecipeFetcher;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -50,24 +51,28 @@ class RecipeController extends Controller
         return view('recipes.create');
     }
 
-    public function store(StoreRecipeRequest $request, RecipeFetcher $fetcher): RedirectResponse
+    public function store(StoreRecipeRequest $request, RecipeFetcher $fetcher, IngredientTagFilter $ingredientTags): RedirectResponse
     {
         $url = (string) $request->validated('url');
-        $fetched = $fetcher->fetch($url);
+        $extracted = $fetcher->fetch($url);
 
         $recipe = $request->user()->recipes()->create([
             'url' => $url,
             'domain' => strtolower((string) parse_url($url, PHP_URL_HOST)),
-            'title' => $fetched['title'] ?: $url,
-            'site_name' => $fetched['site_name'],
-            'image_url' => $fetched['image_url'],
-            'excerpt' => $fetched['excerpt'],
-            'content_html' => $fetched['content_html'],
+            'title' => $extracted->title ?: $url,
+            'site_name' => $extracted->siteName,
+            'image_url' => $extracted->imageUrl,
+            'excerpt' => $extracted->excerpt,
+            'content_html' => $extracted->contentHtml,
         ]);
 
-        $this->syncTags($recipe, $request->input('tags'));
+        // ユーザ入力タグ ＋ 抽出した利用食材（調味料・油などは除外）をマージして付与。
+        $this->syncTags($recipe, array_merge(
+            $this->parseTags($request->input('tags')),
+            $ingredientTags->tags($extracted->ingredients)
+        ));
 
-        $message = $fetched['content_html']
+        $message = $extracted->contentHtml
             ? 'レシピを登録しました。'
             : 'レシピを登録しました（本文の自動取得に失敗したため、編集画面で補完できます）。';
 
@@ -102,16 +107,16 @@ class RecipeController extends Controller
         $recipe->fill($request->only(['title', 'excerpt', 'image_url', 'content_html']));
 
         if ($request->boolean('refetch')) {
-            $fetched = $fetcher->fetch($recipe->url);
-            foreach (['site_name', 'image_url', 'excerpt', 'content_html'] as $key) {
-                if (! empty($fetched[$key])) {
-                    $recipe->{$key} = $fetched[$key];
-                }
-            }
+            $extracted = $fetcher->fetch($recipe->url);
+            $recipe->site_name = $extracted->siteName ?: $recipe->site_name;
+            $recipe->image_url = $extracted->imageUrl ?: $recipe->image_url;
+            $recipe->excerpt = $extracted->excerpt ?: $recipe->excerpt;
+            $recipe->content_html = $extracted->contentHtml ?: $recipe->content_html;
         }
 
         $recipe->save();
-        $this->syncTags($recipe, $request->input('tags'));
+        // 編集時は食材タグの自動再付与はせず、ユーザが整理したタグを尊重する。
+        $this->syncTags($recipe, $this->parseTags($request->input('tags')));
 
         return redirect()->route('recipes.show', $recipe)->with('status', 'レシピを更新しました。');
     }
@@ -126,11 +131,13 @@ class RecipeController extends Controller
     }
 
     /**
-     * カンマ区切りのタグ文字列をタグへ同期する。
+     * タグ名の配列をレシピへ同期する（共有語彙。無ければ作成）。
+     *
+     * @param  list<string>  $names
      */
-    private function syncTags(Recipe $recipe, ?string $tagsInput): void
+    private function syncTags(Recipe $recipe, array $names): void
     {
-        $ids = collect(explode(',', (string) $tagsInput))
+        $ids = collect($names)
             ->map(fn (string $name): string => trim($name))
             ->filter()
             ->unique()
@@ -138,5 +145,19 @@ class RecipeController extends Controller
             ->all();
 
         $recipe->tags()->sync($ids);
+    }
+
+    /**
+     * カンマ区切りのタグ文字列を配列へ変換する。
+     *
+     * @return list<string>
+     */
+    private function parseTags(?string $csv): array
+    {
+        return collect(explode(',', (string) $csv))
+            ->map(fn (string $name): string => trim($name))
+            ->filter()
+            ->values()
+            ->all();
     }
 }

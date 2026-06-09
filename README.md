@@ -55,6 +55,31 @@ ALLOWED_RECIPE_DOMAINS=cookpad.com,kurashiru.com,delishkitchen.tv,recipe.rakuten
 docker compose exec app php artisan config:clear
 ```
 
+## レシピの取り込み（サイト別抽出）
+
+URL 登録時、`config/recipe.php` の `extractors` に登録されたエクストラクタを上から順に試します。
+
+- **`JsonLdRecipeExtractor`（汎用）**: ページに schema.org/Recipe の JSON-LD があれば、そこから
+  タイトル・画像・説明・**材料**・**作り方**を構造化して正確に取り込みます（みんなのきょうの料理・
+  楽天レシピなど多くのサイトが対象）。
+- **`GenericExtractor`（フォールバック）**: JSON-LD が無いサイトは readability で本文を抽出します。
+
+### 食材の自動タグ化
+
+構造化抽出できたレシピは、**利用食材が自動でタグになります**（調味料・油・粉類・だし・水などは除外）。
+除外する語は `config/recipe.php` の `ingredient_tag_denylist` で調整できます（完全一致または後方一致で除外。
+例: `油`→`サラダ油/ごま油`、`こしょう`→`黒こしょう`）。手動で入力したタグとは併せて付与されます。
+
+### サイト固有の抽出定義を追加する
+
+特定サイト向けに独自抽出を足したい場合:
+
+1. `App\Services\Extraction\RecipeExtractor` を実装したクラスを作成
+   （`extract(url, html)` 内で対象ホスト以外は `null` を返す）。
+2. `config/recipe.php` の `extractors` 配列の **先頭側**（`JsonLdRecipeExtractor` より上）に追加する（先勝ち）。
+
+> 取り込んだ本文 HTML は HTMLPurifier（`config/purifier.php`）でサニタイズして保存・表示します。
+
 ## 機能
 
 | 機能 | 内容 |
@@ -64,7 +89,7 @@ docker compose exec app php artisan config:clear
 | レシピ登録 | 許可ドメインのURLを貼ると本文・画像・概要を自動取得 |
 | レシピ閲覧 | 保存した本文をオフラインで閲覧 |
 | レシピ編集 | タイトル・概要・画像・本文・タグを編集。URLからの再取得も可能 |
-| タグ | カンマ区切りで付与（`firstOrCreate` で共有） |
+| タグ | 手動（カンマ区切り）＋ 構造化抽出時は利用食材を自動タグ化（調味料等は除外） |
 | 作ってみたメモ | レシピごとに感想・作った日を記録 |
 
 ## 管理コマンド（`docker compose exec`）

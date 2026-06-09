@@ -2,32 +2,44 @@
 
 namespace App\Services;
 
+use App\Services\Extraction\ExtractedRecipe;
+use App\Services\Extraction\RecipeExtractor;
 use DOMDocument;
 use DOMXPath;
-use fivefilters\Readability\Configuration;
-use fivefilters\Readability\ParseException;
-use fivefilters\Readability\Readability;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class RecipeFetcher
 {
     /**
-     * URL からページを取得し、メタ情報と本文を抽出して返す。
+     * URL からページを取得し、登録済みのエクストラクタで本文・食材を抽出する。
      * 取得・抽出に失敗してもできる範囲の情報を返す（フォールバック）。
-     *
-     * @return array{title: ?string, site_name: ?string, image_url: ?string, excerpt: ?string, content_html: ?string}
      */
-    public function fetch(string $url): array
+    public function fetch(string $url): ExtractedRecipe
     {
-        $data = [
-            'title' => null,
-            'site_name' => null,
-            'image_url' => null,
-            'excerpt' => null,
-            'content_html' => null,
-        ];
+        $html = $this->download($url);
 
+        if ($html === null) {
+            return new ExtractedRecipe();
+        }
+
+        // OGP/title を base メタとして先に取得し、抽出結果の欠損を後で補完する。
+        $meta = $this->extractMeta($html);
+
+        foreach ($this->extractors() as $extractor) {
+            $extracted = $extractor->extract($url, $html);
+
+            if ($extracted !== null) {
+                return $this->mergeMeta($extracted, $meta);
+            }
+        }
+
+        // 通常は終端の GenericExtractor が必ず結果を返すためここには来ない。
+        return $this->mergeMeta(new ExtractedRecipe(), $meta);
+    }
+
+    private function download(string $url): ?string
+    {
         try {
             $response = Http::timeout((int) config('recipe.fetch_timeout', 10))
                 ->withHeaders([
@@ -38,39 +50,40 @@ class RecipeFetcher
         } catch (\Throwable $e) {
             Log::warning('RecipeFetcher: ページ取得に失敗しました', ['url' => $url, 'error' => $e->getMessage()]);
 
-            return $data;
+            return null;
         }
 
-        if (! $response->successful()) {
-            return $data;
+        return $response->successful() ? $response->body() : null;
+    }
+
+    /**
+     * @return iterable<RecipeExtractor>
+     */
+    private function extractors(): iterable
+    {
+        /** @var list<class-string<RecipeExtractor>> $classes */
+        $classes = config('recipe.extractors', []);
+
+        foreach ($classes as $class) {
+            yield app($class);
         }
+    }
 
-        $html = $response->body();
-
-        $meta = $this->extractMeta($html);
-        $data['title'] = $meta['title'];
-        $data['site_name'] = $meta['site_name'];
-        $data['image_url'] = $meta['image'];
-        $data['excerpt'] = $meta['description'];
-
-        try {
-            $readability = new Readability(new Configuration([
-                'originalURL' => $url,
-                'fixRelativeURLs' => true,
-            ]));
-            $readability->parse($html);
-
-            $data['content_html'] = $readability->getContent();
-            $data['title'] = $data['title'] ?: $readability->getTitle();
-            $data['excerpt'] = $data['excerpt'] ?: $readability->getExcerpt();
-            $data['image_url'] = $data['image_url'] ?: $readability->getImage();
-            $data['site_name'] = $data['site_name'] ?: $readability->getSiteName();
-        } catch (ParseException $e) {
-            // 本文抽出に失敗しても、メタ情報だけで登録できるようにする。
-            Log::info('RecipeFetcher: 本文抽出に失敗しました', ['url' => $url, 'error' => $e->getMessage()]);
-        }
-
-        return $data;
+    /**
+     * 抽出結果の null フィールドを base メタ（OGP/title）で補完する。
+     *
+     * @param  array{title: ?string, site_name: ?string, image: ?string, description: ?string}  $meta
+     */
+    private function mergeMeta(ExtractedRecipe $extracted, array $meta): ExtractedRecipe
+    {
+        return new ExtractedRecipe(
+            title: $extracted->title ?: $meta['title'],
+            siteName: $extracted->siteName ?: $meta['site_name'],
+            imageUrl: $extracted->imageUrl ?: $meta['image'],
+            excerpt: $extracted->excerpt ?: $meta['description'],
+            contentHtml: $extracted->contentHtml,
+            ingredients: $extracted->ingredients,
+        );
     }
 
     /**
@@ -88,7 +101,6 @@ class RecipeFetcher
 
         $dom = new DOMDocument();
         libxml_use_internal_errors(true);
-        // 文字コードを UTF-8 として解釈させる。
         $dom->loadHTML('<?xml encoding="utf-8" ?>'.$html);
         libxml_clear_errors();
 

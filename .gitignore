@@ -24,6 +24,7 @@
 /database/*.sqlite
 /database/*.sqlite-shm
 /database/*.sqlite-wal
+/.playwright-mcp
 _ide_helper.php
 Homestead.json
 Homestead.yaml
