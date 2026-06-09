@@ -41,8 +41,8 @@ return [
     */
 
     'extractors' => [
-        // 例) サイト固有の上書きはこの上に追加する（先勝ち）
-        // \App\Services\Extraction\CookpadExtractor::class,
+        // サイト固有の定義（先勝ち）。JSON-LD が無い／上書きしたいサイトはここに追加する。
+        \App\Services\Extraction\SirogohanExtractor::class,    // 白ごはん.com（JSON-LD無し）
 
         \App\Services\Extraction\JsonLdRecipeExtractor::class, // schema.org/Recipe を持つ全サイト
         \App\Services\Extraction\GenericExtractor::class,      // readability フォールバック（終端）

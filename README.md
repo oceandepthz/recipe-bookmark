@@ -62,7 +62,12 @@ URL 登録時、`config/recipe.php` の `extractors` に登録されたエクス
 - **`JsonLdRecipeExtractor`（汎用）**: ページに schema.org/Recipe の JSON-LD があれば、そこから
   タイトル・画像・説明・**材料**・**作り方**を構造化して正確に取り込みます（みんなのきょうの料理・
   楽天レシピなど多くのサイトが対象）。
+- **`SirogohanExtractor`（サイト固有）**: 白ごはん.com（JSON-LD 非対応）専用。`.material`/`.howto` の
+  HTML 構造から材料・作り方を抽出する、個別定義の実例。
 - **`GenericExtractor`（フォールバック）**: JSON-LD が無いサイトは readability で本文を抽出します。
+
+動作確認済みの例: みんなのきょうの料理 / 楽天レシピ / デリッシュキッチン（いずれも汎用 JSON-LD で自動対応）、
+白ごはん.com（専用エクストラクタ）。
 
 ### 食材の自動タグ化
 

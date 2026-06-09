@@ -29,7 +29,7 @@ class JsonLdRecipeExtractor implements RecipeExtractor
             excerpt: $this->cleanText($recipe['description'] ?? null),
             contentHtml: $this->buildContentHtml($recipe['description'] ?? null, $ingredientsRaw, $steps),
             ingredients: array_values(array_filter(array_map(
-                fn (string $line): string => $this->parseIngredientName($line),
+                fn (string $line): string => IngredientName::parse($line),
                 $ingredientsRaw
             ))),
         );
@@ -199,17 +199,6 @@ class JsonLdRecipeExtractor implements RecipeExtractor
         }
 
         return $parts === [] ? null : implode("\n", $parts);
-    }
-
-    /**
-     * "・鶏むね肉 1枚" → "鶏むね肉"。先頭の記号を除き、最初の空白より前を名前とみなす。
-     */
-    private function parseIngredientName(string $line): string
-    {
-        $name = preg_replace('/^[\s\x{3000}・･\*\x{2605}\x{2606}\-]+/u', '', trim($line)) ?? '';
-        $parts = preg_split('/[\s\x{3000}]+/u', $name) ?: [];
-
-        return trim($parts[0] ?? '');
     }
 
     /**
