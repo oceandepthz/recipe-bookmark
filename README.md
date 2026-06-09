@@ -34,11 +34,9 @@ docker compose exec app php artisan key:generate
 # 4. マイグレーション
 docker compose exec app php artisan migrate
 
-# 5. ログインユーザーを作成
-docker compose exec app php artisan app:create-user
-#   → 対話で 表示名 / メール / パスワード を入力
-#   非対話で作る場合:
-#   docker compose exec app php artisan app:create-user --name=私 --email=me@example.com --password=********
+# 5. ログインユーザーを作成（対話で 表示名 / メール / パスワード を入力）
+#    オプション指定での非対話作成は「管理コマンド」セクションを参照。
+docker compose exec -it app php artisan app:create-user
 ```
 
 ブラウザで http://localhost:8080 を開く → ログイン。
@@ -86,6 +84,10 @@ docker compose exec app php artisan config:clear
 実行例:
 
 ```bash
+# ユーザー作成（対話）。非対話なら --name= --email= --password= を指定
+docker compose exec -it app php artisan app:create-user
+docker compose exec    app php artisan app:create-user --name=私 --email=me@example.com --password=********
+
 # ユーザー一覧
 docker compose exec app php artisan app:list-users
 
