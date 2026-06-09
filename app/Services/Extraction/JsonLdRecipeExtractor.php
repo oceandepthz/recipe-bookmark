@@ -124,17 +124,18 @@ class JsonLdRecipeExtractor implements RecipeExtractor
     }
 
     /**
-     * recipeInstructions の各種形（文字列 / HowToStep / HowToSection）を手順テキストの配列へ正規化する。
+     * recipeInstructions の各種形（文字列 / HowToStep / HowToSection）を
+     * 手順（テキスト＋任意の手順写真URL）の配列へ正規化する。
      *
-     * @return list<string>
+     * @return list<array{text: string, image: ?string}>
      */
     private function normalizeInstructions(mixed $instructions): array
     {
         if (is_string($instructions)) {
-            return array_values(array_filter(array_map(
-                fn (string $s): string => trim($s),
-                preg_split('/\r\n|\r|\n/', $instructions) ?: []
-            )));
+            return array_values(array_map(
+                fn (string $s): array => ['text' => trim($s), 'image' => null],
+                array_filter(preg_split('/\r\n|\r|\n/', $instructions) ?: [], fn (string $s): bool => trim($s) !== '')
+            ));
         }
 
         if (! is_array($instructions)) {
@@ -147,7 +148,7 @@ class JsonLdRecipeExtractor implements RecipeExtractor
             if (is_string($item)) {
                 $text = $this->cleanText($item);
                 if ($text !== null) {
-                    $steps[] = $text;
+                    $steps[] = ['text' => $text, 'image' => null];
                 }
 
                 continue;
@@ -168,7 +169,7 @@ class JsonLdRecipeExtractor implements RecipeExtractor
 
             $text = $this->cleanText($item['text'] ?? ($item['name'] ?? null));
             if ($text !== null) {
-                $steps[] = $text;
+                $steps[] = ['text' => $text, 'image' => $this->firstImageUrl($item['image'] ?? null)];
             }
         }
 
@@ -177,7 +178,7 @@ class JsonLdRecipeExtractor implements RecipeExtractor
 
     /**
      * @param  list<string>  $ingredients
-     * @param  list<string>  $steps
+     * @param  list<array{text: string, image: ?string}>  $steps
      */
     private function buildContentHtml(?string $description, array $ingredients, array $steps): ?string
     {
@@ -194,7 +195,14 @@ class JsonLdRecipeExtractor implements RecipeExtractor
         }
 
         if ($steps !== []) {
-            $items = implode('', array_map(fn (string $s): string => '<li>'.e($s).'</li>', $steps));
+            $items = implode('', array_map(function (array $step): string {
+                $li = e($step['text']);
+                if ($step['image'] !== null) {
+                    $li .= '<br><img src="'.e($step['image']).'" alt="">';
+                }
+
+                return '<li>'.$li.'</li>';
+            }, $steps));
             $parts[] = '<h2>作り方</h2><ol>'.$items.'</ol>';
         }
 

@@ -34,7 +34,7 @@ class SirogohanExtractor implements RecipeExtractor
         $xpath = new DOMXPath($dom);
 
         $materialLis = $this->materialLines($xpath);
-        $steps = $this->howtoBlocks($xpath);
+        $steps = $this->howtoBlocks($xpath, $url);
 
         if ($materialLis === [] && $steps === []) {
             return null; // 想定構造が無ければ次（汎用）へ委譲
@@ -74,9 +74,11 @@ class SirogohanExtractor implements RecipeExtractor
     }
 
     /**
-     * @return list<array{heading: ?string, paragraphs: list<string>}>
+     * 作り方ブロックを、文章と手順写真を文書順に並べて取り出す。
+     *
+     * @return list<array{heading: ?string, items: list<array{type: string, value: string, alt: string}>}>
      */
-    private function howtoBlocks(DOMXPath $xpath): array
+    private function howtoBlocks(DOMXPath $xpath, string $url): array
     {
         $blocks = $xpath->query(
             "//section[contains(concat(' ', normalize-space(@class), ' '), ' howto ')]"
@@ -95,16 +97,26 @@ class SirogohanExtractor implements RecipeExtractor
                 $heading = $this->normalize($headNode->textContent) ?: null;
             }
 
-            $paragraphs = [];
-            foreach ($xpath->query('.//p', $block) as $p) {
-                $text = $this->normalize($p->textContent);
+            // 段落（p）と手順写真（img）を文書順に収集する。
+            $items = [];
+            foreach ($xpath->query('.//p | .//img', $block) as $node) {
+                if ($node->nodeName === 'img' && $node instanceof DOMElement) {
+                    $src = $this->resolveUrl($url, $node->getAttribute('src'));
+                    if ($src !== null) {
+                        $items[] = ['type' => 'image', 'value' => $src, 'alt' => $this->normalize($node->getAttribute('alt'))];
+                    }
+
+                    continue;
+                }
+
+                $text = $this->normalize($node->textContent);
                 if ($text !== '') {
-                    $paragraphs[] = $text;
+                    $items[] = ['type' => 'text', 'value' => $text, 'alt' => ''];
                 }
             }
 
-            if ($heading !== null || $paragraphs !== []) {
-                $result[] = ['heading' => $heading, 'paragraphs' => $paragraphs];
+            if ($heading !== null || $items !== []) {
+                $result[] = ['heading' => $heading, 'items' => $items];
             }
         }
 
@@ -112,8 +124,35 @@ class SirogohanExtractor implements RecipeExtractor
     }
 
     /**
+     * 相対URL（例 /_files/...）をページのスキーム・ホストで絶対URLへ補正する。
+     */
+    private function resolveUrl(string $base, string $src): ?string
+    {
+        $src = trim($src);
+        if ($src === '') {
+            return null;
+        }
+
+        if (str_starts_with($src, 'http://') || str_starts_with($src, 'https://')) {
+            return $src;
+        }
+
+        $scheme = parse_url($base, PHP_URL_SCHEME) ?: 'https';
+        $host = parse_url($base, PHP_URL_HOST);
+        if ($host === null) {
+            return null;
+        }
+
+        if (str_starts_with($src, '//')) {
+            return $scheme.':'.$src;
+        }
+
+        return $scheme.'://'.$host.'/'.ltrim($src, '/');
+    }
+
+    /**
      * @param  list<string>  $materialLines
-     * @param  list<array{heading: ?string, paragraphs: list<string>}>  $steps
+     * @param  list<array{heading: ?string, items: list<array{type: string, value: string, alt: string}>}>  $steps
      */
     private function buildContentHtml(array $materialLines, array $steps): ?string
     {
@@ -130,8 +169,10 @@ class SirogohanExtractor implements RecipeExtractor
                 if ($block['heading'] !== null) {
                     $parts[] = '<h3>'.e($block['heading']).'</h3>';
                 }
-                foreach ($block['paragraphs'] as $p) {
-                    $parts[] = '<p>'.e($p).'</p>';
+                foreach ($block['items'] as $item) {
+                    $parts[] = $item['type'] === 'image'
+                        ? '<p><img src="'.e($item['value']).'" alt="'.e($item['alt']).'"></p>'
+                        : '<p>'.e($item['value']).'</p>';
                 }
             }
         }
