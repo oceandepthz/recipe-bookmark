@@ -190,6 +190,24 @@ docker compose exec app php artisan app:create-user
      （`bootstrap/app.php`）。**前段プロキシがこのレンジ外**（別ホストの公開IP等）の場合は、その IP/CIDR を
      同ファイルに追加してください。生成URLは `APP_URL` に固定（Host注入対策）。
    - ファイアウォール（ufw 等）で 443（と必要なら 80→443 リダイレクト）以外を遮断。
+   - **公開ポートの変更（git管理外で制御）**: ポートは `.env` の `WEB_PUBLISH` で指定する
+     （`docker-compose.yml` は編集不要＝git差分なし）。既存サービスと衝突する場合や前段 nginx 配下では、
+     空きポートを localhost に束縛する:
+     ```dotenv
+     # .env（git管理外）
+     WEB_PUBLISH=127.0.0.1:8090
+     ```
+     前段 nginx 側（同ホストで TLS 終端する例）:
+     ```nginx
+     location / {
+         proxy_pass http://127.0.0.1:8090;
+         proxy_set_header Host $host;
+         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+         proxy_set_header X-Forwarded-Proto https;   # 前段で TLS 終端する場合
+     }
+     ```
+     （`X-Forwarded-Host` は送らなくてよい＝アプリは `APP_URL` にURLを固定。コンテナ間の送信元は私的IPの
+     ため `trustProxies` に信頼され、HTTPS 判定・セキュアCookie が有効になる。）
 3. **本番ビルド最適化**:
    ```bash
    docker compose exec app composer install --no-dev --optimize-autoloader

@@ -8,8 +8,10 @@ services:
 
   web:
     image: nginx:alpine
+    # 公開ポートは .env の WEB_PUBLISH で制御（未設定なら 8080）。
+    # 例) ローカル別ポート: WEB_PUBLISH=8081 / 前段nginx配下: WEB_PUBLISH=127.0.0.1:8090
     ports:
-      - "8080:80"
+      - "${WEB_PUBLISH:-8080}:80"
     volumes:
       - .:/var/www/html
       - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
