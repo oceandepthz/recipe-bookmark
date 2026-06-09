@@ -16,17 +16,10 @@ class CreateUserCommand extends Command
                             {--email= : ログイン用メールアドレス}
                             {--password= : パスワード（省略時は対話入力）}';
 
-    protected $description = 'ログイン用ユーザーを作成する（1人利用想定）';
+    protected $description = 'ログイン用ユーザーを作成する';
 
     public function handle(): int
     {
-        if (User::query()->exists()) {
-            $this->warn('既にユーザーが存在します。1人利用を想定しているため、通常は追加不要です。');
-            if (! $this->confirm('それでも新しいユーザーを作成しますか？', false)) {
-                return self::SUCCESS;
-            }
-        }
-
         $name = $this->option('name') ?: text('表示名', required: true);
         $email = $this->option('email') ?: text('メールアドレス', required: true);
         $plainPassword = $this->option('password') ?: promptPassword('パスワード（8文字以上）', required: true);

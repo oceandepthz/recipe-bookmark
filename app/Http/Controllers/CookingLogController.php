@@ -11,6 +11,9 @@ class CookingLogController extends Controller
 {
     public function store(Request $request, Recipe $recipe): RedirectResponse
     {
+        // メモを追加できるのはレシピのオーナーのみ。
+        $this->authorize('update', $recipe);
+
         $data = $request->validate([
             'body' => ['required', 'string', 'max:2000'],
             'cooked_on' => ['nullable', 'date'],
@@ -19,15 +22,18 @@ class CookingLogController extends Controller
             'cooked_on' => '作った日',
         ]);
 
-        $recipe->cookingLogs()->create($data);
+        $recipe->cookingLogs()->create($data + ['user_id' => $recipe->user_id]);
 
         return redirect()
             ->route('recipes.show', $recipe)
             ->with('status', '「作ってみた」コメントを追加しました。');
     }
 
-    public function destroy(CookingLog $cookingLog): RedirectResponse
+    public function destroy(Request $request, CookingLog $cookingLog): RedirectResponse
     {
+        // 自分のメモのみ削除可。
+        abort_unless($cookingLog->user_id === $request->user()->id, 403);
+
         $recipeId = $cookingLog->recipe_id;
         $cookingLog->delete();
 

@@ -18,7 +18,7 @@ class RecipeController extends Controller
         $tag = $request->string('tag')->trim()->toString();
         $q = $request->string('q')->trim()->toString();
 
-        $recipes = Recipe::query()
+        $recipes = $request->user()->recipes()
             ->with('tags')
             ->withCount('cookingLogs')
             ->when($tag !== '', fn ($query) => $query->whereHas('tags', fn ($t) => $t->where('name', $tag)))
@@ -31,7 +31,11 @@ class RecipeController extends Controller
             ->paginate(12)
             ->withQueryString();
 
-        $tags = Tag::query()->orderBy('name')->get();
+        // タグは共有語彙だが、表示は「自分のレシピに付いたタグ」のみに限定する。
+        $tags = Tag::query()
+            ->whereHas('recipes', fn ($query) => $query->where('recipes.user_id', $request->user()->id))
+            ->orderBy('name')
+            ->get();
 
         return view('recipes.index', [
             'recipes' => $recipes,
@@ -51,7 +55,7 @@ class RecipeController extends Controller
         $url = (string) $request->validated('url');
         $fetched = $fetcher->fetch($url);
 
-        $recipe = Recipe::create([
+        $recipe = $request->user()->recipes()->create([
             'url' => $url,
             'domain' => strtolower((string) parse_url($url, PHP_URL_HOST)),
             'title' => $fetched['title'] ?: $url,
@@ -72,6 +76,8 @@ class RecipeController extends Controller
 
     public function show(Recipe $recipe): View
     {
+        $this->authorize('view', $recipe);
+
         $recipe->load('tags', 'cookingLogs');
 
         return view('recipes.show', ['recipe' => $recipe]);
@@ -79,6 +85,8 @@ class RecipeController extends Controller
 
     public function edit(Recipe $recipe): View
     {
+        $this->authorize('update', $recipe);
+
         $recipe->load('tags');
 
         return view('recipes.edit', [
@@ -89,6 +97,8 @@ class RecipeController extends Controller
 
     public function update(UpdateRecipeRequest $request, Recipe $recipe, RecipeFetcher $fetcher): RedirectResponse
     {
+        $this->authorize('update', $recipe);
+
         $recipe->fill($request->only(['title', 'excerpt', 'image_url', 'content_html']));
 
         if ($request->boolean('refetch')) {
@@ -108,6 +118,8 @@ class RecipeController extends Controller
 
     public function destroy(Recipe $recipe): RedirectResponse
     {
+        $this->authorize('delete', $recipe);
+
         $recipe->delete();
 
         return redirect()->route('recipes.index')->with('status', 'レシピを削除しました。');
