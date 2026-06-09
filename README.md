@@ -185,8 +185,10 @@ docker compose exec app php artisan app:create-user
 2. **HTTPS（TLS）を前段に置く**。Caddy や nginx + Let's Encrypt 等で TLS 終端し、**443 のみ公開**する。
    - 本リポジトリの `web`(nginx)/`app`(php-fpm) コンテナのポートは **直接公開しない**
      （`docker-compose.yml` の `ports` を外す、または `127.0.0.1:8080:80` のようにローカル束縛して
-     ホスト側のTLSプロキシから繋ぐ）。アプリは `trustProxies(at:'*')` を使うため、プロキシ経由のみ
-     到達させること（XFF 偽装による IP 偽装防止）。
+     ホスト側のTLSプロキシから繋ぐ）。
+   - 信頼するプロキシは私的IPレンジ（`10/8`,`172.16/12`,`192.168/16`,`127.0.0.1`）に限定しています
+     （`bootstrap/app.php`）。**前段プロキシがこのレンジ外**（別ホストの公開IP等）の場合は、その IP/CIDR を
+     同ファイルに追加してください。生成URLは `APP_URL` に固定（Host注入対策）。
    - ファイアウォール（ufw 等）で 443（と必要なら 80→443 リダイレクト）以外を遮断。
 3. **本番ビルド最適化**:
    ```bash
