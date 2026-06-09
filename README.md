@@ -170,10 +170,49 @@ docker compose exec app php artisan migrate:fresh
 docker compose exec app php artisan app:create-user
 ```
 
+## 本番デプロイ / セキュリティ（VPS公開時）
+
+公開前の必須チェックリスト:
+
+1. **本番 .env を用意**（`.env.production.example` を雛形に）。`APP_KEY` は **VPS で新規生成**する
+   （開発用キーは流用しない）。
+   ```bash
+   cp .env.production.example .env
+   docker compose exec app php artisan key:generate
+   ```
+   要点: `APP_ENV=production` / `APP_DEBUG=false` / `APP_URL=https://...` /
+   `SESSION_SECURE_COOKIE=true` / `LOG_LEVEL=warning`。
+2. **HTTPS（TLS）を前段に置く**。Caddy や nginx + Let's Encrypt 等で TLS 終端し、**443 のみ公開**する。
+   - 本リポジトリの `web`(nginx)/`app`(php-fpm) コンテナのポートは **直接公開しない**
+     （`docker-compose.yml` の `ports` を外す、または `127.0.0.1:8080:80` のようにローカル束縛して
+     ホスト側のTLSプロキシから繋ぐ）。アプリは `trustProxies(at:'*')` を使うため、プロキシ経由のみ
+     到達させること（XFF 偽装による IP 偽装防止）。
+   - ファイアウォール（ufw 等）で 443（と必要なら 80→443 リダイレクト）以外を遮断。
+3. **本番ビルド最適化**:
+   ```bash
+   docker compose exec app composer install --no-dev --optimize-autoloader
+   docker compose exec app php artisan migrate --force
+   docker compose exec app php artisan config:cache
+   docker compose exec app php artisan route:cache
+   docker compose exec app php artisan view:cache
+   docker compose exec app php artisan app:create-user
+   ```
+   （設定変更後は `config:clear`→再 `config:cache`。env() は config ファイル内のみで参照しているため
+   `config:cache` 後も動作します。）
+4. **運用**: ログインロック解除は `app:unlock-logins`、バックアップは上記「バックアップ/リストア」、
+   ログは `storage/logs`。
+
+### 残存リスク（把握しておくこと）
+- **SSRF**: レシピ取得は `ALLOWED_RECIPE_DOMAINS` のドメインに限定しますが、取得時のリダイレクトは
+  追従するため、許可ドメインのオープンリダイレクト経由で内部リソース（例: クラウドメタデータ）へ
+  到達する余地があります。トリガーは認証済みの所有者のみですが、**信頼できるレシピドメインだけ**を
+  許可リストに入れてください（取得時のリダイレクト再検証・内部IPブロックは今後の課題）。
+- 本文中の外部画像を読み込むため、閲覧時に各レシピサイトへ閲覧者のIPが渡ります（プライバシー上の留意点）。
+
 ## メモ
 
-- 本ツールはローカル開発用です。php-fpm プールはバインドマウントへ
-  書き込めるよう `storage/`・`bootstrap/cache/`・SQLite の権限を起動時に緩めています
-  （`docker/php/entrypoint.sh`）。
+- php-fpm プール（www-data）がバインドマウントへ書き込めるよう、起動時に
+  `storage/`・`bootstrap/cache/`・SQLite の権限を緩めています（`docker/php/entrypoint.sh`）。
+  公開運用ではコンテナのポートを直接公開せず、TLSプロキシ背後に置いてください（「本番デプロイ」参照）。
 - 保存した本文HTMLは外部サイト由来の信頼できない入力のため、HTMLPurifier
   （`mews/purifier`）で許可リスト方式にサニタイズしてから保存・表示します（XSS対策）。
